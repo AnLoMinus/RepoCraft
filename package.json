@@ -67,7 +67,7 @@
     "jsdoc": "^4.0.0",
     "http-server": "^14.1.0",
     "rimraf": "^5.0.0",
-    "husky": "^8.0.0",
+    "husky": "^9.1.7",
     "lint-staged": "^14.0.0"
   },
   "lint-staged": {
