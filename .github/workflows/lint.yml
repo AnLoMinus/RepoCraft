@@ -72,7 +72,7 @@ jobs:
         fi
     
     - name: Check Markdown files
-      uses: DavidAnson/markdownlint-cli2-action@v15
+      uses: DavidAnson/markdownlint-cli2-action@v20
       with:
         globs: '**/*.md'
         config: '.markdownlint.json'
