@@ -1,0 +1,211 @@
+name: Performance Monitoring
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * 1' # Weekly on Monday at 2 AM
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  performance-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          fi
+
+      - name: Run performance tests
+        run: |
+          if [ -f package.json ]; then
+            # Run performance tests if they exist
+            npm run test:performance 2>/dev/null || echo "No performance tests found"
+            
+            # Check bundle size
+            npm run build 2>/dev/null || echo "No build script found"
+            
+            # Analyze bundle if webpack-bundle-analyzer is available
+            npm run analyze 2>/dev/null || echo "No bundle analyzer found"
+          fi
+
+      - name: Check file sizes
+        run: |
+          echo "## 📊 File Size Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for large files
+          find . -type f -size +1M -not -path "./node_modules/*" -not -path "./.git/*" | while read file; do
+            size=$(du -h "$file" | cut -f1)
+            echo "⚠️ Large file: $file ($size)" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          # Check for large directories
+          du -sh .github/ docs/ src/ tests/ 2>/dev/null | while read size dir; do
+            echo "📁 $dir: $size" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Check dependencies
+        run: |
+          echo "## 📦 Dependency Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f package.json ]; then
+            # Count dependencies
+            deps=$(npm list --depth=0 2>/dev/null | grep -c "├──\|└──" || echo "0")
+            echo "📊 Total dependencies: $deps" >> $GITHUB_STEP_SUMMARY
+            
+            # Check for outdated packages
+            outdated=$(npm outdated --json 2>/dev/null | jq -r 'keys | length' || echo "0")
+            echo "🔄 Outdated packages: $outdated" >> $GITHUB_STEP_SUMMARY
+            
+            # Check for vulnerabilities
+            vulns=$(npm audit --json 2>/dev/null | jq -r '.vulnerabilities | length' || echo "0")
+            echo "🔒 Vulnerabilities: $vulns" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Performance report
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            // Check for performance-related changes
+            const performanceFiles = files.filter(file => 
+              file.filename.includes('package.json') ||
+              file.filename.includes('webpack') ||
+              file.filename.includes('babel') ||
+              file.filename.includes('rollup') ||
+              file.filename.includes('vite')
+            );
+            
+            if (performanceFiles.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## ⚡ Performance Impact Analysis
+                
+                This PR includes changes that may affect performance:
+                
+                ### Modified Files
+                ${performanceFiles.map(file => `- ${file.filename} (+${file.additions}/-${file.deletions})`).join('\n')}
+                
+                ### Recommendations
+                1. **Test performance** - Run performance tests if available
+                2. **Check bundle size** - Ensure no significant increase
+                3. **Review dependencies** - Check for new heavy packages
+                4. **Monitor metrics** - Watch for performance regressions
+                
+                ### Performance Tests
+                \`\`\`bash
+                # Run performance tests
+                npm run test:performance
+                
+                # Check bundle size
+                npm run build && npm run analyze
+                \`\`\`
+                
+                ### Performance Checklist
+                - [ ] No significant bundle size increase
+                - [ ] No new heavy dependencies
+                - [ ] Performance tests pass
+                - [ ] No performance regressions
+                
+                Keep up the great work! 🚀`
+              });
+            }
+
+      - name: Weekly performance report
+        if: github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Create weekly performance discussion
+            await github.rest.discussions.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📊 Weekly Performance Report - ${new Date().toLocaleDateString()}`,
+              body: `## 📊 Weekly Performance Report
+              
+              **Date:** ${new Date().toLocaleDateString()}
+              **Period:** Last 7 days
+              
+              ### 🚀 Performance Metrics
+              
+              #### Build Performance
+              - **Average build time:** [To be measured]
+              - **Bundle size:** [To be measured]
+              - **Dependencies:** [To be measured]
+              
+              #### CI/CD Performance
+              - **Average CI time:** [To be measured]
+              - **Success rate:** [To be measured]
+              - **Queue time:** [To be measured]
+              
+              ### 📈 Trends
+              - **Performance improvements:** [To be tracked]
+              - **Performance regressions:** [To be tracked]
+              - **New optimizations:** [To be tracked]
+              
+              ### 🎯 Goals for Next Week
+              - [ ] Improve build performance
+              - [ ] Reduce bundle size
+              - [ ] Optimize CI/CD pipeline
+              - [ ] Add performance monitoring
+              
+              ### 💡 Suggestions
+              - Consider implementing performance budgets
+              - Add automated performance testing
+              - Monitor Core Web Vitals
+              - Optimize critical rendering path
+              
+              ---
+              **This report is automatically generated weekly.**`,
+              category: "General"
+            });
+
+      - name: Performance budget check
+        run: |
+          echo "## 💰 Performance Budget Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Define performance budgets
+          MAX_BUNDLE_SIZE="2MB"
+          MAX_DEPENDENCIES=100
+          MAX_BUILD_TIME=300
+          
+          echo "📏 Performance Budgets:" >> $GITHUB_STEP_SUMMARY
+          echo "- Max bundle size: $MAX_BUNDLE_SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "- Max dependencies: $MAX_DEPENDENCIES" >> $GITHUB_STEP_SUMMARY
+          echo "- Max build time: ${MAX_BUILD_TIME}s" >> $GITHUB_STEP_SUMMARY
+          
+          # Check if budgets are exceeded
+          if [ -f package.json ]; then
+            deps=$(npm list --depth=0 2>/dev/null | grep -c "├──\|└──" || echo "0")
+            if [ "$deps" -gt "$MAX_DEPENDENCIES" ]; then
+              echo "⚠️ Dependencies budget exceeded: $deps > $MAX_DEPENDENCIES" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ Dependencies budget OK: $deps <= $MAX_DEPENDENCIES" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi

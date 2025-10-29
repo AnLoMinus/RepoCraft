@@ -1,0 +1,116 @@
+name: Auto Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            echo "## 🎉 Initial Release" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "This is the first release of RepoCraft!" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            echo "## Changes since $PREVIOUS_TAG" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            git log --pretty=format:"- %s" $PREVIOUS_TAG..HEAD >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          body: |
+            ${{ steps.changelog.outputs.changelog }}
+            
+            ## 📦 Installation
+            
+            ### Node.js
+            ```bash
+            npm install -g repocraft
+            ```
+            
+            ### Python
+            ```bash
+            pip install repocraft
+            ```
+            
+            ### Go
+            ```bash
+            go install github.com/AnLoMinus/RepoCraft@${{ github.ref_name }}
+            ```
+            
+            ## 🔗 Links
+            
+            - [Documentation](https://github.com/AnLoMinus/RepoCraft/blob/main/README.md)
+            - [Changelog](https://github.com/AnLoMinus/RepoCraft/blob/main/CHANGELOG.md)
+            - [Contributing](https://github.com/AnLoMinus/RepoCraft/blob/main/CONTRIBUTING.md)
+          draft: false
+          prerelease: false
+
+      - name: Update VERSION file
+        run: |
+          echo "${{ github.ref_name }}" > VERSION
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add VERSION
+          git commit -m "Update version to ${{ github.ref_name }}" || exit 0
+          git push
+
+      - name: Notify community
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Create a discussion post about the release
+            await github.rest.discussions.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🎉 New Release: ${{ github.ref_name }}`,
+              body: `## 🚀 RepoCraft ${{ github.ref_name }} is now available!
+              
+              ${{ steps.changelog.outputs.changelog }}
+              
+              ### 📦 Quick Install
+              
+              **Node.js:**
+              \`\`\`bash
+              npm install -g repocraft
+              \`\`\`
+              
+              **Python:**
+              \`\`\`bash
+              pip install repocraft
+              \`\`\`
+              
+              ### 🔗 Links
+              - [Release Notes](https://github.com/AnLoMinus/RepoCraft/releases/tag/${{ github.ref_name }})
+              - [Documentation](https://github.com/AnLoMinus/RepoCraft/blob/main/README.md)
+              - [Changelog](https://github.com/AnLoMinus/RepoCraft/blob/main/CHANGELOG.md)
+              
+              Happy coding! 🎉`,
+              category: "General"
+            });

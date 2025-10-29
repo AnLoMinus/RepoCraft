@@ -1,0 +1,185 @@
+name: Auto Manage Discussions
+on:
+  discussion:
+    types: [created, edited]
+  discussion_comment:
+    types: [created, edited]
+
+permissions:
+  discussions: write
+  issues: write
+
+jobs:
+  manage-discussions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto-label discussions
+        if: github.event_name == 'discussion'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.discussion.title.toLowerCase();
+            const body = context.payload.discussion.body?.toLowerCase() || '';
+            const labels = [];
+            
+            // Categorize discussions
+            if (title.includes('question') || title.includes('how') || 
+                title.includes('?') || title.includes('help')) {
+              labels.push('question');
+            }
+            
+            if (title.includes('feature') || title.includes('enhancement') || 
+                title.includes('improvement') || title.includes('suggestion')) {
+              labels.push('enhancement');
+            }
+            
+            if (title.includes('bug') || title.includes('error') || 
+                title.includes('problem') || title.includes('issue')) {
+              labels.push('bug');
+            }
+            
+            if (title.includes('announcement') || title.includes('release') || 
+                title.includes('update') || title.includes('news')) {
+              labels.push('announcement');
+            }
+            
+            if (title.includes('showcase') || title.includes('example') || 
+                title.includes('demo') || title.includes('project')) {
+              labels.push('showcase');
+            }
+            
+            // Apply labels
+            if (labels.length > 0) {
+              await github.rest.discussions.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                discussion_number: context.payload.discussion.number,
+                title: context.payload.discussion.title,
+                body: context.payload.discussion.body
+              });
+            }
+
+      - name: Auto-respond to common questions
+        if: github.event_name == 'discussion'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.discussion.title.toLowerCase();
+            const body = context.payload.discussion.body?.toLowerCase() || '';
+            
+            // Check for common questions
+            if (title.includes('how to install') || title.includes('installation')) {
+              await github.rest.discussions.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                discussion_number: context.payload.discussion.number,
+                body: `## 📦 Installation Guide
+                
+                ### Node.js
+                \`\`\`bash
+                npm install -g repocraft
+                \`\`\`
+                
+                ### Python
+                \`\`\`bash
+                pip install repocraft
+                \`\`\`
+                
+                ### Go
+                \`\`\`bash
+                go install github.com/AnLoMinus/RepoCraft@latest
+                \`\`\`
+                
+                ### Quick Start
+                \`\`\`bash
+                repocraft create my-project --template react
+                \`\`\`
+                
+                For more details, check our [Getting Started Guide](https://github.com/AnLoMinus/RepoCraft/blob/main/docs/GETTING_STARTED.md).`
+              });
+            }
+            
+            if (title.includes('how to contribute') || title.includes('contribute')) {
+              await github.rest.discussions.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                discussion_number: context.payload.discussion.number,
+                body: `## 🤝 How to Contribute
+                
+                We welcome contributions! Here's how to get started:
+                
+                ### 1. Fork the Repository
+                Click the "Fork" button on the top right of this page.
+                
+                ### 2. Create a Branch
+                \`\`\`bash
+                git checkout -b feature/amazing-feature
+                \`\`\`
+                
+                ### 3. Make Changes
+                - Follow our [Style Guide](https://github.com/AnLoMinus/RepoCraft/blob/main/docs/STYLE_GUIDE.md)
+                - Add tests for new features
+                - Update documentation
+                
+                ### 4. Submit a Pull Request
+                - Describe your changes clearly
+                - Link to any related issues
+                - Ensure all tests pass
+                
+                For more details, check our [Contributing Guide](https://github.com/AnLoMinus/RepoCraft/blob/main/CONTRIBUTING.md).`
+              });
+            }
+            
+            if (title.includes('bug report') || title.includes('issue')) {
+              await github.rest.discussions.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                discussion_number: context.payload.discussion.number,
+                body: `## 🐛 Bug Report
+                
+                Thanks for reporting this issue! To help us fix it quickly, please provide:
+                
+                ### Required Information
+                - **Steps to reproduce** the bug
+                - **Expected behavior** vs **Actual behavior**
+                - **Environment details** (OS, Node version, etc.)
+                - **Error messages** or logs
+                
+                ### Optional
+                - Screenshots or videos
+                - Workarounds you've tried
+                - Related issues or discussions
+                
+                Once you have this information, please [create an issue](https://github.com/AnLoMinus/RepoCraft/issues/new) with the \`bug\` label for faster processing.`
+              });
+            }
+
+      - name: Auto-respond to comments
+        if: github.event_name == 'discussion_comment'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = context.payload.comment.body.toLowerCase();
+            
+            // Check for common comment patterns
+            if (comment.includes('thank you') || comment.includes('thanks')) {
+              await github.rest.discussions.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                discussion_number: context.payload.discussion.number,
+                body: `You're welcome! 😊 
+                
+                If you have any other questions or need help, feel free to ask. We're here to help!`
+              });
+            }
+            
+            if (comment.includes('+1') || comment.includes('👍') || comment.includes('great')) {
+              await github.rest.discussions.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                discussion_number: context.payload.discussion.number,
+                body: `Glad you found it helpful! 🎉
+                
+                If you have suggestions for improvements or new features, we'd love to hear them!`
+              });
+            }

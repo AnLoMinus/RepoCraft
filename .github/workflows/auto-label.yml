@@ -1,0 +1,127 @@
+name: Auto Label PRs
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  auto-label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto-label Dependabot PRs
+        if: github.actor == 'dependabot[bot]'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = ['dependencies'];
+            
+            // Add language-specific labels
+            const title = context.payload.pull_request.title.toLowerCase();
+            if (title.includes('javascript') || title.includes('node') || title.includes('npm')) {
+              labels.push('javascript');
+            }
+            if (title.includes('python') || title.includes('pip')) {
+              labels.push('python');
+            }
+            if (title.includes('github-actions') || title.includes('actions/')) {
+              labels.push('github-actions');
+            }
+            if (title.includes('docker')) {
+              labels.push('docker');
+            }
+            
+            // Add update type labels
+            if (title.includes('patch') || title.includes('bug fix')) {
+              labels.push('patch');
+            }
+            if (title.includes('minor') || title.includes('feature')) {
+              labels.push('minor');
+            }
+            if (title.includes('major') || title.includes('breaking')) {
+              labels.push('major', 'breaking-change');
+            }
+            
+            // Add security labels
+            if (title.includes('security') || title.includes('vulnerability')) {
+              labels.push('security');
+            }
+            
+            // Apply labels
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: labels
+            });
+
+      - name: Auto-label based on files changed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            const labels = [];
+            
+            // Check file types
+            const hasPackageJson = files.some(file => file.filename.includes('package.json'));
+            const hasRequirements = files.some(file => file.filename.includes('requirements.txt'));
+            const hasDockerfile = files.some(file => file.filename.includes('Dockerfile'));
+            const hasWorkflows = files.some(file => file.filename.includes('.github/workflows/'));
+            const hasDocs = files.some(file => file.filename.endsWith('.md'));
+            const hasTests = files.some(file => file.filename.includes('test') || file.filename.includes('spec'));
+            
+            if (hasPackageJson) labels.push('javascript');
+            if (hasRequirements) labels.push('python');
+            if (hasDockerfile) labels.push('docker');
+            if (hasWorkflows) labels.push('github-actions');
+            if (hasDocs) labels.push('documentation');
+            if (hasTests) labels.push('tests');
+            
+            // Apply labels if any
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: labels
+              });
+            }
+
+      - name: Auto-label based on PR size
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            const totalChanges = files.reduce((sum, file) => sum + file.changes, 0);
+            const labels = [];
+            
+            if (totalChanges < 10) {
+              labels.push('size/XS');
+            } else if (totalChanges < 30) {
+              labels.push('size/S');
+            } else if (totalChanges < 100) {
+              labels.push('size/M');
+            } else if (totalChanges < 500) {
+              labels.push('size/L');
+            } else {
+              labels.push('size/XL');
+            }
+            
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: labels
+            });

@@ -1,0 +1,297 @@
+name: Maintenance Tasks
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sunday at midnight
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Maintenance task to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - cleanup
+          - update
+          - security
+          - performance
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          fi
+
+      - name: Cleanup old branches
+        if: github.event.inputs.task == 'cleanup' || github.event.inputs.task == 'all'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get all branches
+            const { data: branches } = await github.rest.repos.listBranches({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            
+            // Find branches that haven't been updated in 30 days
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+            const oldBranches = branches.filter(branch => {
+              const lastCommit = new Date(branch.commit.commit.date);
+              return lastCommit < thirtyDaysAgo && branch.name !== 'main' && branch.name !== 'master';
+            });
+            
+            if (oldBranches.length > 0) {
+              // Create issue about old branches
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '🧹 Old Branches Cleanup',
+                body: `## 🧹 Old Branches Cleanup
+                
+                The following branches haven't been updated in 30+ days and may be candidates for cleanup:
+                
+                ${oldBranches.map(branch => `- \`${branch.name}\` (last updated: ${new Date(branch.commit.commit.date).toLocaleDateString()})`).join('\n')}
+                
+                ### Actions
+                - [ ] Review each branch
+                - [ ] Merge if changes are needed
+                - [ ] Delete if no longer needed
+                - [ ] Update if still in development
+                
+                ### Benefits
+                - Cleaner repository
+                - Reduced confusion
+                - Better organization
+                - Improved performance
+                
+                ---
+                **This issue was automatically created by the maintenance workflow.**`,
+                labels: ['maintenance', 'cleanup', 'automated']
+              });
+            }
+
+      - name: Update dependencies
+        if: github.event.inputs.task == 'update' || github.event.inputs.task == 'all'
+        run: |
+          echo "## 🔄 Dependency Updates" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f package.json ]; then
+            # Check for outdated packages
+            echo "### Outdated Packages" >> $GITHUB_STEP_SUMMARY
+            npm outdated --json 2>/dev/null | jq -r 'to_entries[] | "\(.key): \(.value.current) → \(.value.latest)"' >> $GITHUB_STEP_SUMMARY || echo "No outdated packages found" >> $GITHUB_STEP_SUMMARY
+            
+            # Check for security vulnerabilities
+            echo "### Security Vulnerabilities" >> $GITHUB_STEP_SUMMARY
+            npm audit --json 2>/dev/null | jq -r '.vulnerabilities | to_entries[] | "\(.key): \(.value.severity)"' >> $GITHUB_STEP_SUMMARY || echo "No security vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Security scan
+        if: github.event.inputs.task == 'security' || github.event.inputs.task == 'all'
+        run: |
+          echo "## 🔒 Security Scan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f package.json ]; then
+            # Run security audit
+            npm audit --audit-level moderate 2>&1 | tee security-scan.txt
+            
+            # Check for high/critical vulnerabilities
+            high_vulns=$(grep -c "high\|critical" security-scan.txt 2>/dev/null || echo "0")
+            echo "High/Critical vulnerabilities: $high_vulns" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$high_vulns" -gt 0 ]; then
+              echo "⚠️ Security issues found!" >> $GITHUB_STEP_SUMMARY
+              echo "Run 'npm audit fix' to fix automatically fixable issues" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ No high/critical security issues" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: Performance check
+        if: github.event.inputs.task == 'performance' || github.event.inputs.task == 'all'
+        run: |
+          echo "## ⚡ Performance Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f package.json ]; then
+            # Check bundle size
+            echo "### Bundle Size Analysis" >> $GITHUB_STEP_SUMMARY
+            npm run build 2>/dev/null && du -sh dist/ build/ 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "No build script available" >> $GITHUB_STEP_SUMMARY
+            
+            # Check for large files
+            echo "### Large Files" >> $GITHUB_STEP_SUMMARY
+            find . -type f -size +1M -not -path "./node_modules/*" -not -path "./.git/*" | while read file; do
+              size=$(du -h "$file" | cut -f1)
+              echo "⚠️ $file ($size)" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+
+      - name: Repository health check
+        if: github.event.inputs.task == 'all'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get repository information
+            const { data: repo } = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            
+            // Get recent issues
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 10
+            });
+            
+            // Get recent PRs
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 10
+            });
+            
+            // Create health report
+            await github.rest.discussions.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🏥 Repository Health Report - ${new Date().toLocaleDateString()}`,
+              body: `## 🏥 Repository Health Report
+              
+              **Date:** ${new Date().toLocaleDateString()}
+              **Repository:** ${repo.full_name}
+              
+              ### 📊 Statistics
+              - **Stars:** ${repo.stargazers_count}
+              - **Forks:** ${repo.forks_count}
+              - **Open Issues:** ${issues.length}
+              - **Open PRs:** ${prs.length}
+              - **Last Updated:** ${new Date(repo.updated_at).toLocaleDateString()}
+              
+              ### 🔍 Recent Activity
+              
+              #### Open Issues
+              ${issues.slice(0, 5).map(issue => `- [${issue.title}](${issue.html_url}) (${issue.labels.map(l => l.name).join(', ')})`).join('\n')}
+              
+              #### Open PRs
+              ${prs.slice(0, 5).map(pr => `- [${pr.title}](${pr.html_url}) (${pr.labels.map(l => l.name).join(', ')})`).join('\n')}
+              
+              ### 🎯 Health Score
+              - **Activity:** ${issues.length + prs.length > 0 ? '✅ Active' : '⚠️ Inactive'}
+              - **Documentation:** ${repo.has_wiki ? '✅ Good' : '⚠️ Could be better'}
+              - **Issues:** ${issues.length < 10 ? '✅ Manageable' : '⚠️ Many open'}
+              - **PRs:** ${prs.length < 5 ? '✅ Manageable' : '⚠️ Many open'}
+              
+              ### 💡 Recommendations
+              - [ ] Review and close old issues
+              - [ ] Merge or close old PRs
+              - [ ] Update documentation
+              - [ ] Review security settings
+              - [ ] Check for outdated dependencies
+              
+              ---
+              **This report is automatically generated weekly.**`,
+              category: "General"
+            });
+
+      - name: Cleanup workflow runs
+        if: github.event.inputs.task == 'cleanup' || github.event.inputs.task == 'all'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get workflow runs
+            const { data: runs } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'maintenance-tasks.yml',
+              per_page: 100
+            });
+            
+            // Find old runs (older than 30 days)
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+            const oldRuns = runs.workflow_runs.filter(run => {
+              const runDate = new Date(run.created_at);
+              return runDate < thirtyDaysAgo && run.status === 'completed';
+            });
+            
+            if (oldRuns.length > 0) {
+              console.log(`Found ${oldRuns.length} old workflow runs to clean up`);
+              
+              // Delete old runs (keep last 10)
+              const runsToDelete = oldRuns.slice(10);
+              for (const run of runsToDelete) {
+                try {
+                  await github.rest.actions.deleteWorkflowRun({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: run.id
+                  });
+                  console.log(`Deleted workflow run ${run.id}`);
+                } catch (error) {
+                  console.log(`Failed to delete workflow run ${run.id}: ${error.message}`);
+                }
+              }
+            }
+
+      - name: Update documentation
+        if: github.event.inputs.task == 'all'
+        run: |
+          echo "## 📚 Documentation Update" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for outdated documentation
+          echo "### Documentation Status" >> $GITHUB_STEP_SUMMARY
+          
+          # Check README
+          if [ -f README.md ]; then
+            echo "✅ README.md exists" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ README.md missing" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check CONTRIBUTING
+          if [ -f CONTRIBUTING.md ]; then
+            echo "✅ CONTRIBUTING.md exists" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ CONTRIBUTING.md missing" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check LICENSE
+          if [ -f LICENSE ]; then
+            echo "✅ LICENSE exists" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ LICENSE missing" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check for broken links
+          echo "### Link Check" >> $GITHUB_STEP_SUMMARY
+          if command -v linkchecker &> /dev/null; then
+            linkchecker --check-extern README.md 2>/dev/null || echo "Link checker not available" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Link checker not installed" >> $GITHUB_STEP_SUMMARY
+          fi

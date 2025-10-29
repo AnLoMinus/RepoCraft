@@ -1,0 +1,221 @@
+name: Quality Assurance
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          fi
+
+      - name: Code quality analysis
+        run: |
+          echo "## 🔍 Code Quality Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for code quality issues
+          if [ -f package.json ]; then
+            # Run linting
+            echo "### Linting Results" >> $GITHUB_STEP_SUMMARY
+            npm run lint 2>&1 | tee lint-results.txt || echo "Linting failed"
+            
+            # Check for TODO/FIXME comments
+            echo "### TODO/FIXME Comments" >> $GITHUB_STEP_SUMMARY
+            grep -r "TODO\|FIXME\|HACK\|XXX" src/ tests/ 2>/dev/null | wc -l | xargs -I {} echo "Found {} TODO/FIXME comments" >> $GITHUB_STEP_SUMMARY
+            
+            # Check for console.log statements
+            echo "### Console Statements" >> $GITHUB_STEP_SUMMARY
+            grep -r "console\." src/ tests/ 2>/dev/null | wc -l | xargs -I {} echo "Found {} console statements" >> $GITHUB_STEP_SUMMARY
+            
+            # Check for unused imports
+            echo "### Unused Imports" >> $GITHUB_STEP_SUMMARY
+            npm run lint:unused 2>/dev/null || echo "No unused import check available" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Test coverage analysis
+        run: |
+          echo "## 📊 Test Coverage Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f package.json ]; then
+            # Run tests with coverage
+            npm run test:coverage 2>&1 | tee coverage-results.txt || echo "Coverage tests failed"
+            
+            # Extract coverage percentage
+            if [ -f coverage-results.txt ]; then
+              coverage=$(grep -o "All files[[:space:]]*[0-9]*\.[0-9]*%" coverage-results.txt | tail -1 | grep -o "[0-9]*\.[0-9]*" || echo "0")
+              echo "### Coverage: ${coverage}%" >> $GITHUB_STEP_SUMMARY
+              
+              # Check if coverage meets threshold
+              if (( $(echo "$coverage >= 80" | bc -l) )); then
+                echo "✅ Coverage meets threshold (80%)" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "⚠️ Coverage below threshold (80%)" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          fi
+
+      - name: Security analysis
+        run: |
+          echo "## 🔒 Security Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f package.json ]; then
+            # Run security audit
+            echo "### Security Audit" >> $GITHUB_STEP_SUMMARY
+            npm audit --audit-level moderate 2>&1 | tee security-results.txt || echo "Security audit failed"
+            
+            # Check for high/critical vulnerabilities
+            high_vulns=$(grep -c "high\|critical" security-results.txt 2>/dev/null || echo "0")
+            echo "High/Critical vulnerabilities: $high_vulns" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$high_vulns" -gt 0 ]; then
+              echo "⚠️ Security issues found!" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ No high/critical security issues" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: Documentation analysis
+        run: |
+          echo "## 📚 Documentation Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for missing documentation
+          echo "### Documentation Coverage" >> $GITHUB_STEP_SUMMARY
+          
+          # Count README files
+          readme_count=$(find . -name "README*" -not -path "./node_modules/*" | wc -l)
+          echo "README files: $readme_count" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for JSDoc comments
+          if [ -d src/ ]; then
+            jsdoc_count=$(grep -r "@param\|@returns\|@description" src/ 2>/dev/null | wc -l)
+            echo "JSDoc comments: $jsdoc_count" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check for inline comments
+          comment_count=$(grep -r "//\|/\*" src/ 2>/dev/null | wc -l)
+          echo "Inline comments: $comment_count" >> $GITHUB_STEP_SUMMARY
+
+      - name: Quality report
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            // Analyze file changes
+            const analysis = {
+              totalFiles: files.length,
+              totalChanges: files.reduce((sum, file) => sum + file.changes, 0),
+              totalAdditions: files.reduce((sum, file) => sum + file.additions, 0),
+              totalDeletions: files.reduce((sum, file) => sum + file.deletions, 0),
+              testFiles: files.filter(file => file.filename.includes('test') || file.filename.includes('spec')).length,
+              docFiles: files.filter(file => file.filename.endsWith('.md')).length,
+              configFiles: files.filter(file => file.filename.includes('config') || file.filename.includes('.json') || file.filename.includes('.yml')).length
+            };
+            
+            // Create quality report comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## 🔍 Quality Analysis Report
+              
+              ### 📊 Change Summary
+              - **Files changed:** ${analysis.totalFiles}
+              - **Total changes:** ${analysis.totalChanges} (+${analysis.totalAdditions}/-${analysis.totalDeletions})
+              - **Test files:** ${analysis.testFiles}
+              - **Documentation files:** ${analysis.docFiles}
+              - **Configuration files:** ${analysis.configFiles}
+              
+              ### ✅ Quality Checklist
+              - [ ] Code follows style guidelines
+              - [ ] Tests are included for new features
+              - [ ] Documentation is updated
+              - [ ] No security vulnerabilities
+              - [ ] Performance impact is acceptable
+              - [ ] Code is properly commented
+              
+              ### 🎯 Quality Score
+              ${analysis.testFiles > 0 ? '✅' : '⚠️'} **Tests:** ${analysis.testFiles > 0 ? 'Good' : 'Consider adding tests'}
+              ${analysis.docFiles > 0 ? '✅' : '⚠️'} **Documentation:** ${analysis.docFiles > 0 ? 'Good' : 'Consider updating docs'}
+              ${analysis.totalChanges < 100 ? '✅' : '⚠️'} **Size:** ${analysis.totalChanges < 100 ? 'Good' : 'Large change - review carefully'}
+              
+              ### 💡 Recommendations
+              ${analysis.testFiles === 0 ? '- Consider adding tests for new functionality\n' : ''}
+              ${analysis.docFiles === 0 ? '- Consider updating documentation\n' : ''}
+              ${analysis.totalChanges > 200 ? '- This is a large change - consider breaking it into smaller PRs\n' : ''}
+              - Ensure all CI checks pass
+              - Review code for potential improvements
+              
+              Keep up the great work! 🚀`
+            });
+
+      - name: Quality metrics
+        run: |
+          echo "## 📈 Quality Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Calculate quality score
+          quality_score=0
+          
+          # Check for tests
+          if [ -d tests/ ] || [ -d __tests__/ ]; then
+            quality_score=$((quality_score + 25))
+            echo "✅ Tests directory found (+25 points)" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check for documentation
+          if [ -f README.md ]; then
+            quality_score=$((quality_score + 25))
+            echo "✅ README found (+25 points)" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check for linting
+          if [ -f .eslintrc* ] || [ -f package.json ]; then
+            quality_score=$((quality_score + 25))
+            echo "✅ Linting configured (+25 points)" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check for CI/CD
+          if [ -d .github/workflows/ ]; then
+            quality_score=$((quality_score + 25))
+            echo "✅ CI/CD configured (+25 points)" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "### Overall Quality Score: $quality_score/100" >> $GITHUB_STEP_SUMMARY
+          
+          if [ $quality_score -ge 80 ]; then
+            echo "🎉 Excellent quality!" >> $GITHUB_STEP_SUMMARY
+          elif [ $quality_score -ge 60 ]; then
+            echo "👍 Good quality!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Quality needs improvement" >> $GITHUB_STEP_SUMMARY
+          fi

@@ -1,0 +1,323 @@
+name: Smart Notifications
+on:
+  issues:
+    types: [opened, closed, reopened, labeled, unlabeled]
+  pull_request:
+    types: [opened, closed, merged, reopened, labeled, unlabeled]
+  discussion:
+    types: [created, edited]
+  discussion_comment:
+    types: [created, edited]
+
+permissions:
+  issues: write
+  pull-requests: write
+  discussions: write
+
+jobs:
+  smart-notifications:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Issue notifications
+        if: github.event_name == 'issues'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const action = context.payload.action;
+            const labels = issue.labels.map(label => label.name);
+            
+            if (action === 'opened') {
+              // Welcome new issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## 👋 Welcome!
+                
+                Thank you for opening this issue! We appreciate your feedback and will review it as soon as possible.
+                
+                ### What happens next?
+                1. **Review** - Our team will review your issue
+                2. **Labeling** - We'll add appropriate labels
+                3. **Response** - We'll respond with questions or next steps
+                4. **Resolution** - We'll work on resolving the issue
+                
+                ### Quick Links
+                - [Documentation](https://github.com/AnLoMinus/RepoCraft/blob/main/README.md)
+                - [Contributing Guide](https://github.com/AnLoMinus/RepoCraft/blob/main/CONTRIBUTING.md)
+                - [Discussions](https://github.com/AnLoMinus/RepoCraft/discussions)
+                
+                ### Tips
+                - Be as specific as possible
+                - Include steps to reproduce (for bugs)
+                - Provide examples (for feature requests)
+                - Check existing issues before opening new ones
+                
+                We're here to help! 🚀`
+              });
+            }
+            
+            if (action === 'labeled') {
+              // Notify about important labels
+              if (labels.includes('priority/high') || labels.includes('critical')) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: `## 🚨 High Priority Issue
+                  
+                  This issue has been marked as high priority and will be addressed as soon as possible.
+                  
+                  **Priority:** ${labels.find(l => l.startsWith('priority/')) || 'High'}
+                  **Status:** Under review
+                  
+                  Thank you for bringing this to our attention! 🙏`
+                });
+              }
+              
+              if (labels.includes('bug')) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: `## 🐛 Bug Report
+                  
+                  Thank you for reporting this bug! We'll investigate and fix it as soon as possible.
+                  
+                  ### Next Steps
+                  1. **Investigation** - We'll reproduce the issue
+                  2. **Fix** - We'll develop a solution
+                  3. **Testing** - We'll test the fix thoroughly
+                  4. **Release** - We'll include the fix in the next release
+                  
+                  ### Help Us Help You
+                  - Can you provide more details about when this happens?
+                  - Are there any error messages?
+                  - What steps led to this issue?
+                  
+                  We appreciate your patience! 🔧`
+                });
+              }
+              
+              if (labels.includes('enhancement')) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: `## 💡 Feature Request
+                  
+                  Great idea! We'll consider this enhancement for future releases.
+                  
+                  ### Evaluation Process
+                  1. **Review** - We'll evaluate the feasibility
+                  2. **Planning** - We'll plan the implementation
+                  3. **Development** - We'll develop the feature
+                  4. **Testing** - We'll test thoroughly
+                  5. **Release** - We'll include in a future release
+                  
+                  ### Community Input
+                  - Vote with 👍 if you want this feature
+                  - Share your use case in the comments
+                  - Suggest implementation details
+                  
+                  Thank you for the suggestion! 🌟`
+                });
+              }
+            }
+
+      - name: PR notifications
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const action = context.payload.action;
+            const labels = pr.labels.map(label => label.name);
+            
+            if (action === 'opened') {
+              // Welcome new PR
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## 🎉 Pull Request Opened
+                
+                Thank you for your contribution! We'll review your changes as soon as possible.
+                
+                ### Review Process
+                1. **Automated Checks** - CI, tests, and linting
+                2. **Code Review** - Our team will review your code
+                3. **Feedback** - We may request changes
+                4. **Merge** - Once approved, we'll merge your changes
+                
+                ### PR Checklist
+                - [ ] Code follows style guidelines
+                - [ ] Tests are included
+                - [ ] Documentation is updated
+                - [ ] All CI checks pass
+                - [ ] No breaking changes (or documented)
+                
+                ### Resources
+                - [Contributing Guide](https://github.com/AnLoMinus/RepoCraft/blob/main/CONTRIBUTING.md)
+                - [Style Guide](https://github.com/AnLoMinus/RepoCraft/blob/main/docs/STYLE_GUIDE.md)
+                - [Code of Conduct](https://github.com/AnLoMinus/RepoCraft/blob/main/CODE_OF_CONDUCT.md)
+                
+                We appreciate your contribution! 🙏`
+              });
+            }
+            
+            if (action === 'merged') {
+              // Thank for merged PR
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## 🎉 Pull Request Merged!
+                
+                Your contribution has been successfully merged! Thank you for helping improve RepoCraft.
+                
+                ### What was merged:
+                - **Title:** ${pr.title}
+                - **Files changed:** ${pr.changed_files}
+                - **Additions:** +${pr.additions}
+                - **Deletions:** -${pr.deletions}
+                
+                ### Impact
+                Your changes will help improve RepoCraft for the entire community. We're grateful for your contribution! 🌟
+                
+                ### Next Steps
+                - You'll be added to our [Contributors](https://github.com/AnLoMinus/RepoCraft/blob/main/CONTRIBUTORS.md) list
+                - Consider joining our [Discord community](https://discord.gg/repocraft)
+                - Follow us for updates on new features and releases
+                
+                Keep up the great work! 💪`
+              });
+            }
+
+      - name: Discussion notifications
+        if: github.event_name == 'discussion'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const discussion = context.payload.discussion;
+            const action = context.payload.action;
+            
+            if (action === 'created') {
+              // Welcome new discussion
+              await github.rest.discussions.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                discussion_number: discussion.number,
+                body: `## 👋 Welcome to the Discussion!
+                
+                Thank you for starting this discussion! We encourage open and respectful dialogue.
+                
+                ### Discussion Guidelines
+                - Be respectful and constructive
+                - Stay on topic
+                - Provide helpful information
+                - Ask questions if you need clarification
+                
+                ### Community Resources
+                - [Documentation](https://github.com/AnLoMinus/RepoCraft/blob/main/README.md)
+                - [Contributing Guide](https://github.com/AnLoMinus/RepoCraft/blob/main/CONTRIBUTING.md)
+                - [Code of Conduct](https://github.com/AnLoMinus/RepoCraft/blob/main/CODE_OF_CONDUCT.md)
+                
+                We're excited to hear your thoughts! 🚀`
+              });
+            }
+
+      - name: Smart mentions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Smart mention system for different types of issues
+            const issue = context.payload.issue || context.payload.pull_request;
+            const labels = issue.labels.map(label => label.name);
+            
+            if (labels.includes('security')) {
+              // Mention security team for security issues
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## 🔒 Security Issue Detected
+                
+                @AnLoMinus - This issue has been flagged as security-related and requires immediate attention.
+                
+                **Priority:** High
+                **Category:** Security
+                **Action Required:** Review and respond ASAP
+                
+                Thank you for reporting this security issue! 🙏`
+              });
+            }
+            
+            if (labels.includes('critical') || labels.includes('priority/high')) {
+              // Mention maintainers for critical issues
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## 🚨 Critical Issue
+                
+                @AnLoMinus - This issue has been marked as critical and requires immediate attention.
+                
+                **Priority:** Critical
+                **Status:** Under review
+                **Action Required:** Immediate response
+                
+                We'll address this as soon as possible! 🚀`
+              });
+            }
+
+      - name: Auto-close stale issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Check for stale issues (older than 30 days with no activity)
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+            const staleIssues = issues.filter(issue => {
+              const lastUpdate = new Date(issue.updated_at);
+              return lastUpdate < thirtyDaysAgo && !issue.labels.some(label => label.name === 'keep-open');
+            });
+            
+            for (const issue of staleIssues) {
+              // Add stale label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['stale']
+              });
+              
+              // Comment about staleness
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `## ⏰ Stale Issue
+                
+                This issue hasn't been updated in 30+ days and may be stale.
+                
+                ### Options
+                - **Still relevant?** Add a comment to keep it open
+                - **Resolved?** Close the issue
+                - **No longer needed?** Close the issue
+                
+                ### Auto-close
+                This issue will be automatically closed in 7 days if no activity occurs.
+                
+                If you want to keep this issue open, please add a comment explaining why. 🙏`
+              });
+            }

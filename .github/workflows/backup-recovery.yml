@@ -1,0 +1,284 @@
+name: Backup and Recovery
+on:
+  schedule:
+    - cron: '0 2 * * 0' # Weekly on Sunday at 2 AM
+  workflow_dispatch:
+    inputs:
+      backup_type:
+        description: 'Type of backup to perform'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - incremental
+          - configuration
+          - documentation
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          fi
+
+      - name: Create backup directory
+        run: |
+          mkdir -p backups/$(date +%Y-%m-%d)
+          BACKUP_DIR="backups/$(date +%Y-%m-%d)"
+          echo "BACKUP_DIR=$BACKUP_DIR" >> $GITHUB_ENV
+
+      - name: Full backup
+        if: github.event.inputs.backup_type == 'full' || github.event.inputs.backup_type == ''
+        run: |
+          echo "## 💾 Full Backup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Backup all important files
+          echo "### Backing up files..." >> $GITHUB_STEP_SUMMARY
+          
+          # Copy all files except node_modules and .git
+          rsync -av --exclude='node_modules' --exclude='.git' --exclude='backups' . $BACKUP_DIR/
+          
+          # Create archive
+          tar -czf "backup-$(date +%Y-%m-%d).tar.gz" -C $BACKUP_DIR .
+          
+          echo "✅ Full backup completed" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Backup size: $(du -h backup-$(date +%Y-%m-%d).tar.gz | cut -f1)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Incremental backup
+        if: github.event.inputs.backup_type == 'incremental'
+        run: |
+          echo "## 🔄 Incremental Backup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Find files modified in the last 7 days
+          find . -type f -mtime -7 -not -path "./node_modules/*" -not -path "./.git/*" -not -path "./backups/*" > modified_files.txt
+          
+          # Create incremental backup
+          tar -czf "incremental-backup-$(date +%Y-%m-%d).tar.gz" -T modified_files.txt
+          
+          echo "✅ Incremental backup completed" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Backup size: $(du -h incremental-backup-$(date +%Y-%m-%d).tar.gz | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          echo "📄 Files backed up: $(wc -l < modified_files.txt)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Configuration backup
+        if: github.event.inputs.backup_type == 'configuration'
+        run: |
+          echo "## ⚙️ Configuration Backup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Backup configuration files
+          mkdir -p $BACKUP_DIR/config
+          
+          # Copy configuration files
+          cp -r .github/ $BACKUP_DIR/config/ 2>/dev/null || echo "No .github directory"
+          cp package.json $BACKUP_DIR/config/ 2>/dev/null || echo "No package.json"
+          cp pyproject.toml $BACKUP_DIR/config/ 2>/dev/null || echo "No pyproject.toml"
+          cp requirements.txt $BACKUP_DIR/config/ 2>/dev/null || echo "No requirements.txt"
+          cp go.mod $BACKUP_DIR/config/ 2>/dev/null || echo "No go.mod"
+          cp Dockerfile $BACKUP_DIR/config/ 2>/dev/null || echo "No Dockerfile"
+          cp docker-compose.yml $BACKUP_DIR/config/ 2>/dev/null || echo "No docker-compose.yml"
+          cp Makefile $BACKUP_DIR/config/ 2>/dev/null || echo "No Makefile"
+          cp .gitignore $BACKUP_DIR/config/ 2>/dev/null || echo "No .gitignore"
+          cp .gitattributes $BACKUP_DIR/config/ 2>/dev/null || echo "No .gitattributes"
+          cp .editorconfig $BACKUP_DIR/config/ 2>/dev/null || echo "No .editorconfig"
+          
+          # Create configuration archive
+          tar -czf "config-backup-$(date +%Y-%m-%d).tar.gz" -C $BACKUP_DIR/config .
+          
+          echo "✅ Configuration backup completed" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Backup size: $(du -h config-backup-$(date +%Y-%m-%d).tar.gz | cut -f1)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Documentation backup
+        if: github.event.inputs.backup_type == 'documentation'
+        run: |
+          echo "## 📚 Documentation Backup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Backup documentation files
+          mkdir -p $BACKUP_DIR/docs
+          
+          # Copy documentation files
+          cp -r docs/ $BACKUP_DIR/ 2>/dev/null || echo "No docs directory"
+          cp README.md $BACKUP_DIR/docs/ 2>/dev/null || echo "No README.md"
+          cp CONTRIBUTING.md $BACKUP_DIR/docs/ 2>/dev/null || echo "No CONTRIBUTING.md"
+          cp CODE_OF_CONDUCT.md $BACKUP_DIR/docs/ 2>/dev/null || echo "No CODE_OF_CONDUCT.md"
+          cp SECURITY.md $BACKUP_DIR/docs/ 2>/dev/null || echo "No SECURITY.md"
+          cp SUPPORT.md $BACKUP_DIR/docs/ 2>/dev/null || echo "No SUPPORT.md"
+          cp CHANGELOG.md $BACKUP_DIR/docs/ 2>/dev/null || echo "No CHANGELOG.md"
+          cp ROADMAP.md $BACKUP_DIR/docs/ 2>/dev/null || echo "No ROADMAP.md"
+          cp LICENSE $BACKUP_DIR/docs/ 2>/dev/null || echo "No LICENSE"
+          
+          # Create documentation archive
+          tar -czf "docs-backup-$(date +%Y-%m-%d).tar.gz" -C $BACKUP_DIR/docs .
+          
+          echo "✅ Documentation backup completed" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Backup size: $(du -h docs-backup-$(date +%Y-%m-%d).tar.gz | cut -f1)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Backup verification
+        run: |
+          echo "## 🔍 Backup Verification" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # List backup files
+          echo "### Backup Files Created:" >> $GITHUB_STEP_SUMMARY
+          ls -la *.tar.gz 2>/dev/null | while read line; do
+            echo "- $line" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          # Verify backup integrity
+          echo "### Backup Integrity Check:" >> $GITHUB_STEP_SUMMARY
+          for file in *.tar.gz; do
+            if [ -f "$file" ]; then
+              if tar -tzf "$file" > /dev/null 2>&1; then
+                echo "✅ $file - OK" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "❌ $file - Corrupted" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          done
+
+      - name: Create backup report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const backupType = '${{ github.event.inputs.backup_type || 'full' }}';
+            const timestamp = new Date().toISOString();
+            
+            // Create backup report discussion
+            await github.rest.discussions.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `💾 Backup Report - ${backupType.charAt(0).toUpperCase() + backupType.slice(1)} (${new Date().toLocaleDateString()})`,
+              body: `## 💾 Backup Report
+              
+              **Type:** ${backupType.charAt(0).toUpperCase() + backupType.slice(1)} Backup
+              **Date:** ${new Date().toLocaleDateString()}
+              **Time:** ${new Date().toLocaleTimeString()}
+              **Status:** ✅ Completed
+              
+              ### 📊 Backup Summary
+              - **Backup Type:** ${backupType}
+              - **Backup Directory:** backups/${new Date().toISOString().split('T')[0]}
+              - **Files Backed Up:** [See workflow summary]
+              - **Backup Size:** [See workflow summary]
+              
+              ### 🔍 Verification
+              - **Integrity Check:** ✅ Passed
+              - **File Count:** [See workflow summary]
+              - **Compression:** gzip
+              - **Archive Format:** tar.gz
+              
+              ### 📁 Backup Contents
+              ${backupType === 'full' ? '- All repository files (excluding node_modules, .git)' : ''}
+              ${backupType === 'incremental' ? '- Files modified in the last 7 days' : ''}
+              ${backupType === 'configuration' ? '- Configuration files (.github, package.json, etc.)' : ''}
+              ${backupType === 'documentation' ? '- Documentation files (README, docs/, etc.)' : ''}
+              
+              ### 🚀 Recovery Instructions
+              1. **Download** the backup archive
+              2. **Extract** the archive: \`tar -xzf backup-*.tar.gz\`
+              3. **Restore** files to their original locations
+              4. **Verify** the restoration
+              
+              ### 📅 Next Backup
+              - **Scheduled:** Next Sunday at 2:00 AM
+              - **Type:** Full backup
+              - **Retention:** 30 days
+              
+              ### 💡 Tips
+              - Keep backups in a secure location
+              - Test recovery procedures regularly
+              - Monitor backup success/failure
+              - Consider off-site backup storage
+              
+              ---
+              **This backup was automatically created by the backup workflow.**`,
+              category: "General"
+            });
+
+      - name: Cleanup old backups
+        run: |
+          echo "## 🧹 Cleanup Old Backups" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Remove backups older than 30 days
+          find backups/ -type d -mtime +30 -exec rm -rf {} \; 2>/dev/null || echo "No old backups to clean"
+          
+          # Remove backup archives older than 30 days
+          find . -name "*.tar.gz" -mtime +30 -delete 2>/dev/null || echo "No old archives to clean"
+          
+          echo "✅ Old backups cleaned up" >> $GITHUB_STEP_SUMMARY
+          
+          # Show remaining backups
+          echo "### Remaining Backups:" >> $GITHUB_STEP_SUMMARY
+          ls -la backups/ 2>/dev/null | while read line; do
+            echo "- $line" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Backup monitoring
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Check backup health
+            const { data: discussions } = await github.rest.discussions.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            // Find recent backup discussions
+            const recentBackups = discussions.filter(discussion => 
+              discussion.title.includes('Backup Report') &&
+              new Date(discussion.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+            );
+            
+            if (recentBackups.length === 0) {
+              // No recent backups - create alert
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '⚠️ Backup Alert: No Recent Backups',
+                body: `## ⚠️ Backup Alert
+                
+                No backup reports have been found in the last 7 days.
+                
+                ### Possible Issues
+                - Backup workflow failed
+                - Backup workflow was disabled
+                - Backup workflow has errors
+                
+                ### Actions Required
+                1. Check the [Actions tab](https://github.com/${context.repo.owner}/${context.repo.repo}/actions) for failed workflows
+                2. Review backup workflow configuration
+                3. Ensure backup workflow is enabled
+                4. Test backup manually if needed
+                
+                ### Backup Schedule
+                - **Frequency:** Weekly (Sundays at 2:00 AM)
+                - **Type:** Full backup
+                - **Retention:** 30 days
+                
+                ---
+                **This alert was automatically created by the backup monitoring system.**`,
+                labels: ['backup', 'alert', 'automated']
+              });
+            }

@@ -1,0 +1,70 @@
+{
+  "name": "Main Branch Protection",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["main", "master"]
+    }
+  },
+  "rules": [
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "required_status_checks": {
+          "strict": true,
+          "contexts": [
+            "CI",
+            "Lint", 
+            "Test",
+            "Build",
+            "Security Scan",
+            "Pages"
+          ]
+        }
+      }
+    },
+    {
+      "type": "required_pull_request_reviews",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_reviews": true,
+        "require_last_push_approval": true
+      }
+    },
+    {
+      "type": "linear_history"
+    },
+    {
+      "type": "deletion",
+      "parameters": {
+        "protected": true
+      }
+    },
+    {
+      "type": "non_fast_forward",
+      "parameters": {
+        "protected": true
+      }
+    },
+    {
+      "type": "update",
+      "parameters": {
+        "update_allows_fetch_and_merge": true
+      }
+    }
+  ],
+  "bypass_actors": [
+    {
+      "actor_id": "dependabot[bot]",
+      "actor_type": "Integration",
+      "bypass_mode": "always"
+    },
+    {
+      "actor_id": "AnLoMinus",
+      "actor_type": "User", 
+      "bypass_mode": "always"
+    }
+  ]
+}

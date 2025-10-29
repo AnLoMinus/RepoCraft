@@ -1,0 +1,293 @@
+name: Analytics and Metrics
+on:
+  schedule:
+    - cron: '0 0 * * 1' # Weekly on Monday at midnight
+  workflow_dispatch:
+    inputs:
+      period:
+        description: 'Time period for analytics'
+        required: true
+        default: 'week'
+        type: choice
+        options:
+          - week
+          - month
+          - quarter
+          - year
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  discussions: read
+
+jobs:
+  analytics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          fi
+
+      - name: Collect repository metrics
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const period = '${{ github.event.inputs.period || 'week' }}';
+            const now = new Date();
+            let startDate;
+            
+            switch (period) {
+              case 'week':
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                break;
+              case 'month':
+                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                break;
+              case 'quarter':
+                startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                break;
+              case 'year':
+                startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+                break;
+            }
+            
+            // Get repository information
+            const { data: repo } = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            
+            // Get issues
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              per_page: 100,
+              since: startDate.toISOString()
+            });
+            
+            // Get pull requests
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              per_page: 100
+            });
+            
+            // Get discussions
+            const { data: discussions } = await github.rest.discussions.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            // Get contributors
+            const { data: contributors } = await github.rest.repos.listContributors({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            
+            // Get releases
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            // Calculate metrics
+            const metrics = {
+              period: period,
+              startDate: startDate.toISOString(),
+              endDate: now.toISOString(),
+              repository: {
+                name: repo.name,
+                fullName: repo.full_name,
+                stars: repo.stargazers_count,
+                forks: repo.forks_count,
+                watchers: repo.subscribers_count,
+                openIssues: repo.open_issues_count,
+                size: repo.size,
+                language: repo.language,
+                createdAt: repo.created_at,
+                updatedAt: repo.updated_at
+              },
+              issues: {
+                total: issues.length,
+                open: issues.filter(i => i.state === 'open').length,
+                closed: issues.filter(i => i.state === 'closed').length,
+                byLabel: {}
+              },
+              pullRequests: {
+                total: prs.length,
+                open: prs.filter(pr => pr.state === 'open').length,
+                closed: prs.filter(pr => pr.state === 'closed').length,
+                merged: prs.filter(pr => pr.merged_at).length
+              },
+              discussions: {
+                total: discussions.length,
+                byCategory: {}
+              },
+              contributors: {
+                total: contributors.length,
+                topContributors: contributors.slice(0, 10).map(c => ({
+                  login: c.login,
+                  contributions: c.contributions
+                }))
+              },
+              releases: {
+                total: releases.length,
+                latest: releases[0]?.tag_name || 'None',
+                lastRelease: releases[0]?.published_at || 'None'
+              }
+            };
+            
+            // Analyze issue labels
+            issues.forEach(issue => {
+              issue.labels.forEach(label => {
+                if (!metrics.issues.byLabel[label.name]) {
+                  metrics.issues.byLabel[label.name] = 0;
+                }
+                metrics.issues.byLabel[label.name]++;
+              });
+            });
+            
+            // Analyze discussion categories
+            discussions.forEach(discussion => {
+              if (!metrics.discussions.byCategory[discussion.category.name]) {
+                metrics.discussions.byCategory[discussion.category.name] = 0;
+              }
+              metrics.discussions.byCategory[discussion.category.name]++;
+            });
+            
+            // Create analytics report
+            await github.rest.discussions.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📊 Analytics Report - ${period.charAt(0).toUpperCase() + period.slice(1)}ly (${startDate.toLocaleDateString()} - ${now.toLocaleDateString()})`,
+              body: `## 📊 Analytics Report
+              
+              **Period:** ${period.charAt(0).toUpperCase() + period.slice(1)}ly
+              **Date Range:** ${startDate.toLocaleDateString()} - ${now.toLocaleDateString()}
+              **Generated:** ${now.toLocaleDateString()}
+              
+              ### 🏠 Repository Overview
+              - **Name:** ${metrics.repository.fullName}
+              - **Stars:** ${metrics.repository.stars} ⭐
+              - **Forks:** ${metrics.repository.forks} 🍴
+              - **Watchers:** ${metrics.repository.watchers} 👀
+              - **Open Issues:** ${metrics.repository.openIssues}
+              - **Language:** ${metrics.repository.language || 'Mixed'}
+              - **Size:** ${metrics.repository.size} KB
+              
+              ### 📝 Issues Analysis
+              - **Total Issues:** ${metrics.issues.total}
+              - **Open Issues:** ${metrics.issues.open}
+              - **Closed Issues:** ${metrics.issues.closed}
+              - **Resolution Rate:** ${metrics.issues.total > 0 ? Math.round((metrics.issues.closed / metrics.issues.total) * 100) : 0}%
+              
+              #### Issues by Label
+              ${Object.entries(metrics.issues.byLabel).map(([label, count]) => `- **${label}:** ${count}`).join('\n')}
+              
+              ### 🔄 Pull Requests Analysis
+              - **Total PRs:** ${metrics.pullRequests.total}
+              - **Open PRs:** ${metrics.pullRequests.open}
+              - **Closed PRs:** ${metrics.pullRequests.closed}
+              - **Merged PRs:** ${metrics.pullRequests.merged}
+              - **Merge Rate:** ${metrics.pullRequests.total > 0 ? Math.round((metrics.pullRequests.merged / metrics.pullRequests.total) * 100) : 0}%
+              
+              ### 💬 Discussions Analysis
+              - **Total Discussions:** ${metrics.discussions.total}
+              
+              #### Discussions by Category
+              ${Object.entries(metrics.discussions.byCategory).map(([category, count]) => `- **${category}:** ${count}`).join('\n')}
+              
+              ### 👥 Contributors Analysis
+              - **Total Contributors:** ${metrics.contributors.total}
+              
+              #### Top Contributors
+              ${metrics.contributors.topContributors.map(c => `- **${c.login}:** ${c.contributions} contributions`).join('\n')}
+              
+              ### 🚀 Releases Analysis
+              - **Total Releases:** ${metrics.releases.total}
+              - **Latest Release:** ${metrics.releases.latest}
+              - **Last Release:** ${metrics.releases.lastRelease}
+              
+              ### 📈 Trends
+              - **Activity Level:** ${metrics.issues.total + metrics.pullRequests.total > 10 ? 'High' : metrics.issues.total + metrics.pullRequests.total > 5 ? 'Medium' : 'Low'}
+              - **Community Engagement:** ${metrics.discussions.total > 5 ? 'High' : metrics.discussions.total > 2 ? 'Medium' : 'Low'}
+              - **Contribution Rate:** ${metrics.pullRequests.merged > 5 ? 'High' : metrics.pullRequests.merged > 2 ? 'Medium' : 'Low'}
+              
+              ### 🎯 Recommendations
+              ${metrics.issues.open > 10 ? '- Consider addressing open issues\n' : ''}
+              ${metrics.pullRequests.open > 5 ? '- Review and merge open pull requests\n' : ''}
+              ${metrics.discussions.total < 5 ? '- Encourage more community discussions\n' : ''}
+              ${metrics.contributors.total < 10 ? '- Recruit more contributors\n' : ''}
+              - Monitor repository health regularly
+              - Engage with the community
+              - Maintain good documentation
+              
+              ---
+              **This report is automatically generated ${period}ly.**`,
+              category: "General"
+            });
+
+      - name: Generate metrics summary
+        run: |
+          echo "## 📊 Metrics Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Repository metrics
+          echo "### Repository Health" >> $GITHUB_STEP_SUMMARY
+          echo "- Stars: [To be fetched]" >> $GITHUB_STEP_SUMMARY
+          echo "- Forks: [To be fetched]" >> $GITHUB_STEP_SUMMARY
+          echo "- Open Issues: [To be fetched]" >> $GITHUB_STEP_SUMMARY
+          echo "- Open PRs: [To be fetched]" >> $GITHUB_STEP_SUMMARY
+          
+          # Activity metrics
+          echo "### Activity Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "- Issues opened: [To be calculated]" >> $GITHUB_STEP_SUMMARY
+          echo "- Issues closed: [To be calculated]" >> $GITHUB_STEP_SUMMARY
+          echo "- PRs opened: [To be calculated]" >> $GITHUB_STEP_SUMMARY
+          echo "- PRs merged: [To be calculated]" >> $GITHUB_STEP_SUMMARY
+          
+          # Community metrics
+          echo "### Community Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "- Discussions: [To be calculated]" >> $GITHUB_STEP_SUMMARY
+          echo "- Contributors: [To be calculated]" >> $GITHUB_STEP_SUMMARY
+          echo "- Releases: [To be calculated]" >> $GITHUB_STEP_SUMMARY
+
+      - name: Export metrics to file
+        run: |
+          # Create metrics directory
+          mkdir -p metrics
+          
+          # Export basic metrics
+          cat > metrics/repository-metrics.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "repository": "${{ github.repository }}",
+            "period": "${{ github.event.inputs.period || 'week' }}",
+            "metrics": {
+              "stars": 0,
+              "forks": 0,
+              "issues": 0,
+              "pullRequests": 0,
+              "contributors": 0,
+              "releases": 0
+            }
+          }
+          EOF
+          
+          echo "Metrics exported to metrics/repository-metrics.json" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,239 @@
+name: Security Management
+on:
+  security_advisory:
+    types: [published, updated]
+  repository_vulnerability_alert:
+    types: [create, dismiss, resolve]
+
+permissions:
+  security-events: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  handle-security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Handle security advisory
+        if: github.event_name == 'security_advisory'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const advisory = context.payload.security_advisory;
+            const severity = advisory.severity;
+            const summary = advisory.summary;
+            const description = advisory.description;
+            
+            // Create issue for high/critical vulnerabilities
+            if (severity === 'high' || severity === 'critical') {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🚨 Security Advisory: ${summary}`,
+                body: `## 🚨 Security Advisory
+                
+                **Severity:** ${severity.toUpperCase()}
+                **Summary:** ${summary}
+                
+                ### Description
+                ${description}
+                
+                ### Affected Packages
+                ${advisory.vulnerabilities.map(v => `- ${v.package.name} (${v.package.ecosystem})`).join('\n')}
+                
+                ### Recommended Actions
+                1. **Immediate:** Update affected packages to patched versions
+                2. **Review:** Check for any custom code that might be affected
+                3. **Test:** Run security scans and tests
+                4. **Monitor:** Watch for any suspicious activity
+                
+                ### Resources
+                - [Security Advisory](https://github.com/advisories/${advisory.ghsa_id})
+                - [Security Policy](https://github.com/AnLoMinus/RepoCraft/blob/main/SECURITY.md)
+                
+                ---
+                **This issue was automatically created due to a security advisory.**`,
+                labels: ['security', 'priority/high', 'automated'],
+                assignees: ['AnLoMinus']
+              });
+            }
+            
+            // Create discussion for medium/low vulnerabilities
+            if (severity === 'medium' || severity === 'low') {
+              await github.rest.discussions.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `⚠️ Security Advisory: ${summary}`,
+                body: `## ⚠️ Security Advisory
+                
+                **Severity:** ${severity.toUpperCase()}
+                **Summary:** ${summary}
+                
+                ### Description
+                ${description}
+                
+                ### Affected Packages
+                ${advisory.vulnerabilities.map(v => `- ${v.package.name} (${v.package.ecosystem})`).join('\n')}
+                
+                ### Recommended Actions
+                1. Update affected packages when convenient
+                2. Review the advisory details
+                3. Consider if any custom code is affected
+                
+                ### Resources
+                - [Security Advisory](https://github.com/advisories/${advisory.ghsa_id})
+                - [Security Policy](https://github.com/AnLoMinus/RepoCraft/blob/main/SECURITY.md)
+                
+                ---
+                **This discussion was automatically created due to a security advisory.**`,
+                category: "General"
+              });
+            }
+
+      - name: Handle vulnerability alert
+        if: github.event_name == 'repository_vulnerability_alert'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const alert = context.payload.alert;
+            const action = context.payload.action;
+            
+            if (action === 'create') {
+              // Create issue for new vulnerability
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🔍 Dependency Vulnerability: ${alert.package.name}`,
+                body: `## 🔍 Dependency Vulnerability Detected
+                
+                **Package:** ${alert.package.name}
+                **Ecosystem:** ${alert.package.ecosystem}
+                **Severity:** ${alert.security_advisory.severity}
+                
+                ### Description
+                ${alert.security_advisory.summary}
+                
+                ### Recommended Actions
+                1. **Update** the package to a patched version
+                2. **Review** the [security advisory](https://github.com/advisories/${alert.security_advisory.ghsa_id})
+                3. **Test** your application after updating
+                4. **Monitor** for any issues
+                
+                ### Update Command
+                \`\`\`bash
+                # For npm packages
+                npm update ${alert.package.name}
+                
+                # For Python packages
+                pip install --upgrade ${alert.package.name}
+                \`\`\`
+                
+                ---
+                **This issue was automatically created due to a dependency vulnerability.**`,
+                labels: ['security', 'dependencies', 'automated'],
+                assignees: ['AnLoMinus']
+              });
+            }
+            
+            if (action === 'dismiss') {
+              // Comment on existing issues
+              const { data: issues } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: 'security',
+                state: 'open'
+              });
+              
+              const relatedIssue = issues.find(issue => 
+                issue.title.includes(alert.package.name)
+              );
+              
+              if (relatedIssue) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: relatedIssue.number,
+                  body: `## ✅ Vulnerability Dismissed
+                  
+                  This vulnerability has been dismissed. Please review the reason and ensure it's appropriate.
+                  
+                  **Package:** ${alert.package.name}
+                  **Action:** Dismissed
+                  **Date:** ${new Date().toISOString()}
+                  
+                  If this was dismissed in error, please reopen this issue.`
+                });
+              }
+            }
+            
+            if (action === 'resolve') {
+              // Comment on existing issues
+              const { data: issues } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: 'security',
+                state: 'open'
+              });
+              
+              const relatedIssue = issues.find(issue => 
+                issue.title.includes(alert.package.name)
+              );
+              
+              if (relatedIssue) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: relatedIssue.number,
+                  body: `## ✅ Vulnerability Resolved
+                  
+                  This vulnerability has been resolved by updating the package.
+                  
+                  **Package:** ${alert.package.name}
+                  **Action:** Resolved
+                  **Date:** ${new Date().toISOString()}
+                  
+                  Great job! 🎉`
+                });
+                
+                // Close the issue
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: relatedIssue.number,
+                  state: 'closed'
+                });
+              }
+            }
+
+      - name: Notify security team
+        if: github.event_name == 'security_advisory' && (context.payload.security_advisory.severity === 'high' || context.payload.security_advisory.severity === 'critical')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Create a high-priority discussion for critical vulnerabilities
+            await github.rest.discussions.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 CRITICAL: Security Advisory - ${context.payload.security_advisory.summary}`,
+              body: `## 🚨 CRITICAL SECURITY ADVISORY
+              
+              **Severity:** ${context.payload.security_advisory.severity.toUpperCase()}
+              **Summary:** ${context.payload.security_advisory.summary}
+              
+              ### Immediate Actions Required
+              1. **STOP** using affected versions immediately
+              2. **UPDATE** to patched versions as soon as possible
+              3. **REVIEW** your code for potential exploits
+              4. **MONITOR** for any suspicious activity
+              
+              ### Affected Packages
+              ${context.payload.security_advisory.vulnerabilities.map(v => `- ${v.package.name} (${v.package.ecosystem})`).join('\n')}
+              
+              ### Resources
+              - [Security Advisory](https://github.com/advisories/${context.payload.security_advisory.ghsa_id})
+              - [Security Policy](https://github.com/AnLoMinus/RepoCraft/blob/main/SECURITY.md)
+              
+              ---
+              **This is a critical security issue that requires immediate attention.**`,
+              category: "General"
+            });

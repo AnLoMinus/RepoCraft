@@ -1,0 +1,115 @@
+name: Auto Label Issues
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  auto-label-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto-label based on title
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.issue.title.toLowerCase();
+            const body = context.payload.issue.body?.toLowerCase() || '';
+            const labels = [];
+            
+            // Bug detection
+            if (title.includes('bug') || title.includes('error') || title.includes('issue') || 
+                title.includes('problem') || title.includes('broken') || title.includes('fix')) {
+              labels.push('bug');
+            }
+            
+            // Feature detection
+            if (title.includes('feature') || title.includes('enhancement') || 
+                title.includes('improvement') || title.includes('add') || title.includes('new')) {
+              labels.push('enhancement');
+            }
+            
+            // Documentation detection
+            if (title.includes('doc') || title.includes('documentation') || 
+                title.includes('readme') || title.includes('guide')) {
+              labels.push('documentation');
+            }
+            
+            // Question detection
+            if (title.includes('question') || title.includes('how') || 
+                title.includes('?') || title.includes('help')) {
+              labels.push('question');
+            }
+            
+            // Priority detection
+            if (title.includes('urgent') || title.includes('critical') || 
+                title.includes('asap') || title.includes('emergency')) {
+              labels.push('priority/high');
+            }
+            
+            // Type detection from body
+            if (body.includes('security') || body.includes('vulnerability') || 
+                body.includes('exploit') || body.includes('attack')) {
+              labels.push('security');
+            }
+            
+            if (body.includes('performance') || body.includes('slow') || 
+                body.includes('optimization') || body.includes('speed')) {
+              labels.push('performance');
+            }
+            
+            if (body.includes('ui') || body.includes('ux') || 
+                body.includes('interface') || body.includes('design')) {
+              labels.push('ui/ux');
+            }
+            
+            // Apply labels
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: labels
+              });
+            }
+
+      - name: Auto-assign based on labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            
+            const labels = issue.labels.map(label => label.name);
+            const assignees = [];
+            
+            // Assign based on labels
+            if (labels.includes('bug') || labels.includes('security')) {
+              assignees.push('AnLoMinus');
+            }
+            
+            if (labels.includes('documentation')) {
+              assignees.push('AnLoMinus');
+            }
+            
+            if (labels.includes('javascript') || labels.includes('node')) {
+              assignees.push('AnLoMinus');
+            }
+            
+            if (labels.includes('python')) {
+              assignees.push('AnLoMinus');
+            }
+            
+            // Apply assignees
+            if (assignees.length > 0) {
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                assignees: assignees
+              });
+            }

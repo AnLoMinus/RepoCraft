@@ -1,0 +1,83 @@
+name: dependabot-auto-merge
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  approve-and-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-approve safe updates
+        if: |
+          contains(steps.meta.outputs.update-type, 'semver-patch') ||
+          contains(steps.meta.outputs.update-type, 'semver-minor') ||
+          steps.meta.outputs.security-advisory-id != ''
+        uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          review-message: "Auto-approving safe Dependabot update ✅"
+
+      - name: Enable auto-merge (squash)
+        if: |
+          (contains(steps.meta.outputs.update-type, 'semver-patch') ||
+           contains(steps.meta.outputs.update-type, 'semver-minor') ||
+           steps.meta.outputs.security-advisory-id != '') &&
+          !contains(github.event.pull_request.labels.*.name, 'no-automerge')
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          merge-method: squash
+
+      - name: Add review comment for major updates
+        if: contains(steps.meta.outputs.update-type, 'semver-major')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `⚠️ **Major Update Detected**
+              
+              This is a major version update that may contain breaking changes.
+              Please review the changelog and test thoroughly before merging.
+              
+              **Update Type:** ${context.payload.pull_request.title}
+              **Package:** ${steps.meta.outputs.dependency-names}
+              **From:** ${steps.meta.outputs.previous-version}
+              **To:** ${steps.meta.outputs.new-version}
+              
+              Consider adding the \`no-automerge\` label if manual review is needed.`
+            })
+
+      - name: Add review comment for security updates
+        if: steps.meta.outputs.security-advisory-id != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🔒 **Security Update Detected**
+              
+              This update addresses a security vulnerability.
+              Auto-merge enabled for immediate protection.
+              
+              **Security Advisory:** ${steps.meta.outputs.security-advisory-id}
+              **Package:** ${steps.meta.outputs.dependency-names}
+              **Severity:** ${steps.meta.outputs.security-advisory-severity}
+              
+              ✅ Auto-approved and queued for merge.`
+            })
