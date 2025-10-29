@@ -1,0 +1,87 @@
+name: Lint
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Node.js dependencies
+      run: |
+        if [ -f package.json ]; then
+          npm ci
+        fi
+    
+    - name: Install Python dependencies
+      run: |
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        fi
+        if [ -f pyproject.toml ]; then
+          pip install -e .
+        fi
+    
+    - name: Run ESLint
+      run: |
+        if [ -f package.json ] && [ -f .eslintrc.js ]; then
+          npx eslint src/ tests/ --ext .js,.jsx,.ts,.tsx
+        fi
+    
+    - name: Run Prettier
+      run: |
+        if [ -f package.json ] && [ -f .prettierrc ]; then
+          npx prettier --check src/ tests/
+        fi
+    
+    - name: Run Python linting
+      run: |
+        if [ -f pyproject.toml ] || [ -f requirements.txt ]; then
+          python -m flake8 src/ tests/
+          python -m black --check src/ tests/
+          python -m isort --check-only src/ tests/
+        fi
+    
+    - name: Run TypeScript type checking
+      run: |
+        if [ -f package.json ] && [ -f tsconfig.json ]; then
+          npx tsc --noEmit
+        fi
+    
+    - name: Run Python type checking
+      run: |
+        if [ -f pyproject.toml ] || [ -f requirements.txt ]; then
+          python -m mypy src/
+        fi
+    
+    - name: Check Markdown files
+      uses: DavidAnson/markdownlint-cli2-action@v15
+      with:
+        globs: '**/*.md'
+        config: '.markdownlint.json'
+    
+    - name: Check YAML files
+      uses: karancode/yaml-lint-action@v1.0.0
+      with:
+        yaml_file: '.github/workflows/*.yml'
+    
+    - name: Check JSON files
+      run: |
+        find . -name "*.json" -not -path "./node_modules/*" -not -path "./.git/*" | xargs -I {} sh -c 'echo "Checking {}" && python -m json.tool {} > /dev/null'

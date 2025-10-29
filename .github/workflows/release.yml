@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        registry-url: 'https://registry.npmjs.org'
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        if [ -f package.json ]; then
+          npm ci
+        fi
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        fi
+        if [ -f pyproject.toml ]; then
+          pip install build twine
+        fi
+    
+    - name: Build project
+      run: |
+        if [ -f package.json ]; then
+          npm run build
+        fi
+        if [ -f pyproject.toml ]; then
+          python -m build
+        fi
+    
+    - name: Run tests
+      run: |
+        if [ -f package.json ]; then
+          npm test
+        fi
+        if [ -f requirements.txt ] || [ -f pyproject.toml ]; then
+          python -m pytest tests/ -v
+        fi
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        echo "changelog<<EOF" >> $GITHUB_OUTPUT
+        git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        body: |
+          ## Changes in this Release
+          ${{ steps.changelog.outputs.changelog }}
+          
+          ## Installation
+          ```bash
+          npm install repocraft
+          # or
+          pip install repocraft
+          ```
+        draft: false
+        prerelease: false
+    
+    - name: Upload Release Assets
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/
+        asset_name: repocraft-${{ github.ref_name }}
+        asset_content_type: application/zip
+    
+    - name: Publish to NPM
+      if: contains(github.ref, 'v') && !contains(github.ref, 'beta') && !contains(github.ref, 'alpha')
+      run: |
+        if [ -f package.json ]; then
+          npm publish
+        fi
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    
+    - name: Publish to PyPI
+      if: contains(github.ref, 'v') && !contains(github.ref, 'beta') && !contains(github.ref, 'alpha')
+      run: |
+        if [ -f pyproject.toml ]; then
+          python -m twine upload dist/*
+        fi
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+    
+    - name: Update version file
+      run: |
+        echo "${{ github.ref_name }}" > VERSION
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add VERSION
+        git commit -m "Update version to ${{ github.ref_name }}" || exit 0
+        git push

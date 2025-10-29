@@ -1,0 +1,77 @@
+# These owners will be the default owners for everything in the repo.
+# Unless a later match takes precedence, these users will be requested for
+# review when someone opens a pull request.
+* @AnLoMinus
+
+# Global patterns
+*.md @AnLoMinus
+*.yml @AnLoMinus
+*.yaml @AnLoMinus
+*.json @AnLoMinus
+
+# Documentation
+docs/ @AnLoMinus
+README.md @AnLoMinus
+CHANGELOG.md @AnLoMinus
+CONTRIBUTING.md @AnLoMinus
+CODE_OF_CONDUCT.md @AnLoMinus
+SECURITY.md @AnLoMinus
+SUPPORT.md @AnLoMinus
+ROADMAP.md @AnLoMinus
+
+# GitHub workflows
+.github/ @AnLoMinus
+.github/workflows/ @AnLoMinus
+.github/ISSUE_TEMPLATE/ @AnLoMinus
+
+# Configuration files
+.gitignore @AnLoMinus
+.gitattributes @AnLoMinus
+.editorconfig @AnLoMinus
+CODEOWNERS @AnLoMinus
+
+# Source code (adjust based on your project structure)
+src/ @AnLoMinus
+lib/ @AnLoMinus
+app/ @AnLoMinus
+
+# Tests
+tests/ @AnLoMinus
+test/ @AnLoMinus
+__tests__/ @AnLoMinus
+
+# Scripts
+scripts/ @AnLoMinus
+bin/ @AnLoMinus
+
+# Assets
+assets/ @AnLoMinus
+public/ @AnLoMinus
+static/ @AnLoMinus
+
+# Package files
+package.json @AnLoMinus
+package-lock.json @AnLoMinus
+yarn.lock @AnLoMinus
+pnpm-lock.yaml @AnLoMinus
+requirements.txt @AnLoMinus
+pyproject.toml @AnLoMinus
+go.mod @AnLoMinus
+go.sum @AnLoMinus
+Cargo.toml @AnLoMinus
+Cargo.lock @AnLoMinus
+pom.xml @AnLoMinus
+build.gradle @AnLoMinus
+
+# Docker files
+Dockerfile @AnLoMinus
+docker-compose.yml @AnLoMinus
+.dockerignore @AnLoMinus
+
+# CI/CD
+.github/workflows/ci.yml @AnLoMinus
+.github/workflows/lint.yml @AnLoMinus
+.github/workflows/release.yml @AnLoMinus
+.github/workflows/pages.yml @AnLoMinus
+.github/workflows/security-scan.yml @AnLoMinus
+.github/dependabot.yml @AnLoMinus

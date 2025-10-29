@@ -1,0 +1,123 @@
+{
+  "name": "repocraft",
+  "version": "1.0.0",
+  "description": "מסגרת-על מקיפה למאגרי GitHub",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
+    "format": "prettier --write src/ tests/",
+    "format:check": "prettier --check src/ tests/",
+    "build": "webpack --mode production",
+    "build:dev": "webpack --mode development",
+    "docs": "jsdoc src/ -d docs/api",
+    "docs:serve": "http-server docs/api -p 8080",
+    "clean": "rimraf dist/ build/ coverage/",
+    "prepare": "husky install",
+    "precommit": "lint-staged"
+  },
+  "keywords": [
+    "github",
+    "repository",
+    "template",
+    "boilerplate",
+    "cli",
+    "tool"
+  ],
+  "author": "Moshe Leon Yaakubov <anlominus@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AnLoMinus/RepoCraft.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AnLoMinus/RepoCraft/issues"
+  },
+  "homepage": "https://github.com/AnLoMinus/RepoCraft#readme",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "bin": {
+    "repocraft": "./bin/repocraft.js"
+  },
+  "dependencies": {
+    "commander": "^11.0.0",
+    "inquirer": "^9.2.0",
+    "chalk": "^5.3.0",
+    "ora": "^7.0.0",
+    "fs-extra": "^11.1.0",
+    "glob": "^10.3.0",
+    "handlebars": "^4.7.0",
+    "yaml": "^2.3.0",
+    "semver": "^7.5.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.50.0",
+    "prettier": "^3.0.0",
+    "nodemon": "^3.0.0",
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.0",
+    "jsdoc": "^4.0.0",
+    "http-server": "^14.1.0",
+    "rimraf": "^5.0.0",
+    "husky": "^8.0.0",
+    "lint-staged": "^14.0.0"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{md,json,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/**/*.test.js"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ]
+  },
+  "eslintConfig": {
+    "extends": [
+      "eslint:recommended"
+    ],
+    "env": {
+      "node": true,
+      "es2022": true,
+      "jest": true
+    },
+    "parserOptions": {
+      "ecmaVersion": 2022,
+      "sourceType": "module"
+    },
+    "rules": {
+      "indent": ["error", 2],
+      "quotes": ["error", "single"],
+      "semi": ["error", "always"],
+      "no-unused-vars": "error",
+      "no-console": "warn"
+    }
+  },
+  "prettier": {
+    "semi": true,
+    "trailingComma": "es5",
+    "singleQuote": true,
+    "printWidth": 80,
+    "tabWidth": 2
+  }
+}
